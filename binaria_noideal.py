@@ -1,6 +1,6 @@
 import math
 from scipy.optimize import fsolve
-import argparse
+
 
 # --- Funciones de cálculo termodinámico ---
 
@@ -87,6 +87,60 @@ def isobaric_vle(x_A, P_T, antoine_A, antoine_B, van_laar_A12, van_laar_A21):
 
     return T_solution, y_A, gamma_A, gamma_B
 
+# --- Funciones de conversión de unidades ---
+
+def convert_temperature(value, unit_from, unit_to):
+    if unit_from.lower() == unit_to.lower():
+        return value
+
+    # Convertir a Celsius primero
+    if unit_from.lower() == 'k':
+        celsius = value - 273.15
+    elif unit_from.lower() == 'f':
+        celsius = (value - 32) * 5/9
+    elif unit_from.lower() == 'c':
+        celsius = value
+    else:
+        raise ValueError(f"Unidad de temperatura desconocida: {unit_from}. Unidades soportadas: C, K, F")
+
+    # Convertir de Celsius a la unidad deseada
+    if unit_to.lower() == 'k':
+        return celsius + 273.15
+    elif unit_to.lower() == 'f':
+        return (celsius * 9/5) + 32
+    elif unit_to.lower() == 'c':
+        return celsius
+    else:
+        raise ValueError(f"Unidad de temperatura desconocida: {unit_to}. Unidades soportadas: C, K, F")
+
+def convert_pressure(value, unit_from, unit_to):
+    if unit_from.lower() == unit_to.lower():
+        return value
+
+    # Convertir a kPa primero (asumiendo kPa como base para Antoine si no se especifica)
+    if unit_from.lower() == 'atm':
+        kpa = value * 101.325
+    elif unit_from.lower() == 'mmhg':
+        kpa = value * 0.133322
+    elif unit_from.lower() == 'psi':
+        kpa = value * 6.89476
+    elif unit_from.lower() == 'kpa':
+        kpa = value
+    else:
+        raise ValueError(f"Unidad de presión desconocida: {unit_from}. Unidades soportadas: kPa, atm, mmHg, psi")
+
+    # Convertir de kPa a la unidad deseada
+    if unit_to.lower() == 'atm':
+        return kpa / 101.325
+    elif unit_to.lower() == 'mmhg':
+        return kpa / 0.133322
+    elif unit_to.lower() == 'psi':
+        return kpa / 6.89476
+    elif unit_to.lower() == 'kpa':
+        return kpa
+    else:
+        raise ValueError(f"Unidad de presión desconocida: {unit_to}. Unidades soportadas: kPa, atm, mmHg, psi")
+
 # --- Interfaz de usuario y lógica principal ---
 
 def get_user_input_interactive():
@@ -142,17 +196,23 @@ def get_user_input_interactive():
     if eq_type == "isotermico":
         while True:
             try:
-                T = float(input("Ingrese la temperatura del sistema en grados Celsius (T): "))
+                temp_input = input("Ingrese la temperatura del sistema (ej. 25 C, 298.15 K, 77 F): ").split()
+                value = float(temp_input[0])
+                unit = temp_input[1].upper() if len(temp_input) > 1 else 'C' # Default a Celsius
+                T = convert_temperature(value, unit, 'C') # Convertir a Celsius para Antoine
                 break
-            except ValueError:
-                print("Entrada inválida. Por favor, ingrese un número para la temperatura.")
+            except (ValueError, IndexError) as e:
+                print(f"Entrada inválida. Por favor, ingrese un número y una unidad válida (C, K, F). Error: {e}")
     elif eq_type == "isobarico":
         while True:
             try:
-                P_T = float(input("Ingrese la presión total del sistema (P_T): "))
+                pressure_input = input("Ingrese la presión total del sistema (ej. 101.325 kPa, 1 atm, 760 mmHg, 14.7 psi): ").split()
+                value = float(pressure_input[0])
+                unit = pressure_input[1].lower() if len(pressure_input) > 1 else 'kpa' # Default a kPa
+                P_T = convert_pressure(value, unit, 'kpa') # Convertir a kPa (o la unidad base de tus constantes Antoine)
                 break
-            except ValueError:
-                print("Entrada inválida. Por favor, ingrese un número para la presión.")
+            except (ValueError, IndexError) as e:
+                print(f"Entrada inválida. Por favor, ingrese un número y una unidad válida (kPa, atm, mmHg, psi). Error: {e}")
 
     while True:
         partially_miscible_input = input("\n¿La mezcla es parcialmente miscible? (s/n): ").lower()
@@ -174,55 +234,10 @@ def get_user_input_interactive():
         "partially_miscible": partially_miscible
     }
 
-def save_results(filename, results):
-    with open(filename, 'w') as f:
-        for key, value in results.items():
-            f.write(f"{key}: {value}\n")
-    print(f"Resultados guardados en {filename}")
-
 def main():
-    parser = argparse.ArgumentParser(description="Calculadora de Equilibrio Líquido-Vapor para mezclas binarias no ideales.")
-    parser.add_argument('--interactive', action='store_true', help='Ejecutar en modo interactivo.')
-    parser.add_argument('--xA', type=float, help='Fracción molar líquida del componente A.')
-    parser.add_argument('--PT', type=float, help='Presión total del sistema (para equilibrio isobárico).')
-    parser.add_argument('--T', type=float, help='Temperatura del sistema en grados Celsius (para equilibrio isotérmico).')
-    parser.add_argument('--antoineA', nargs=3, type=float, help='Constantes de Antoine para el componente A (A, B, C).')
-    parser.add_argument('--antoineB', nargs=3, type=float, help='Constantes de Antoine para el componente B (A, B, C).')
-    parser.add_argument('--vanLaarA12', type=float, help='Parámetro A12 del modelo de Van Laar.')
-    parser.add_argument('--vanLaarA21', type=float, help='Parámetro A21 del modelo de Van Laar.')
-    parser.add_argument('--eqType', type=str, choices=['isotermico', 'isobarico'], help='Tipo de equilibrio a calcular (isotermico/isobarico).')
-    parser.add_argument('--partiallyMiscible', type=str, choices=['s', 'n'], help='¿La mezcla es parcialmente miscible? (s/n).')
-    parser.add_argument('--outputFile', type=str, help='Nombre del archivo para guardar los resultados.')
-
-    args = parser.parse_args()
-
-    if args.interactive:
-        user_data = get_user_input_interactive()
-        if not user_data:
-            return
-    else:
-        # Validar que todos los argumentos necesarios estén presentes para el modo no interactivo
-        required_args = ['xA', 'antoineA', 'antoineB', 'vanLaarA12', 'vanLaarA21', 'eqType']
-        if args.eqType == 'isotermico':
-            required_args.append('T')
-        elif args.eqType == 'isobarico':
-            required_args.append('PT')
-
-        for arg_name in required_args:
-            if getattr(args, arg_name) is None:
-                parser.error(f"El argumento --{arg_name} es requerido en modo no interactivo para el tipo de equilibrio {args.eqType}.")
-
-        user_data = {
-            "x_A": args.xA,
-            "P_T": args.PT,
-            "T": args.T,
-            "antoine_A": args.antoineA,
-            "antoine_B": args.antoineB,
-            "van_laar_A12": args.vanLaarA12,
-            "van_laar_A21": args.vanLaarA21,
-            "eq_type": args.eqType,
-            "partially_miscible": args.partiallyMiscible == 's' if args.partiallyMiscible else False
-        }
+    user_data = get_user_input_interactive()
+    if not user_data:
+        return
 
     x_A = user_data["x_A"]
     P_T = user_data["P_T"]
@@ -263,9 +278,6 @@ def main():
             if gamma_A > 5 or gamma_B > 5: # Umbral ajustado, puede ser configurable
                 print("\n¡Advertencia! Coeficientes de actividad muy altos. Esto podría indicar separación de fases líquidas o inestabilidad del sistema.")
                 print("Considere la posibilidad de formación de dos fases líquidas bajo estas condiciones.")
-
-        if args.outputFile:
-            save_results(args.outputFile, results)
 
     except ValueError as e:
         print(f"Error en el cálculo: {e}")
